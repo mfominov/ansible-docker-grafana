@@ -1,28 +1,60 @@
 ---
 
-- name: Edit firewalld for Grafana port
-  firewalld:
-    port: "{{ grafana_publish_port }}/tcp"
-    permanent: true
-    state: enabled
-  notify: restart firewalld
-
 - name: Create grafana storage  
   file:
     path: "{{ grafana_storage_directory }}"
     state: directory
 
-- name: Start Grafana
-  docker: 
-    image: "{{ grafana_image_name }}"
-    state: started
-    name: "{{ grafana_container_name }}"
-    restart_policy: unless-stopped
-    volumes:
-      - "{{ grafana_storage_directory }}:/var/lib/grafana"
-    env:
-     GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
-     GF_USERS_ALLOW_SIGN_UP: false
-     GF_SERVER_DOMAIN: "{{ grafana_base_url }}"
-    ports:
-      - "{{ grafana_publish_port }}:3000"
+- block:
+  - name: Edit firewalld for Grafana port
+    firewalld:
+      port: "{{ grafana_publish_port }}/tcp"
+      permanent: true
+      state: enabled
+    notify: restart firewalld
+
+  - name: Start Grafana
+    docker_container: 
+      image: "{{ grafana_image_name }}"
+      state: started
+      name: "{{ grafana_container_name }}"
+      restart_policy: unless-stopped
+      volumes:
+        - "{{ grafana_storage_directory }}:/var/lib/grafana"
+      env:
+       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+       GF_USERS_ALLOW_SIGN_UP: false
+       GF_SERVER_DOMAIN: "{{ grafana_base_url }}"
+      ports:
+        - "{{ grafana_publish_port }}:3000"
+
+  when: env == "develop"
+
+- block:
+
+  - name: Start Grafana
+    docker_container: 
+      image: "{{ grafana_image_name }}"
+      state: started
+      name: "{{ grafana_container_name }}"
+      restart_policy: unless-stopped
+      volumes:
+        - "{{ grafana_storage_directory }}:/var/lib/grafana"
+      env:
+       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+       GF_USERS_ALLOW_SIGN_UP: false
+       GF_SERVER_DOMAIN: "{{ grafana_base_url }}"
+       GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:/grafana"
+      ports:
+        - "127.0.0.1:3000:3000"
+
+  - name: Copy nginx configs
+    copy: 
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    with_items:
+      - { src: grafana.conf, dest: /etc/nginx/default.d/grafana.conf }
+      - { src: grafana_upstream.conf, dest: /etc/nginx/conf.d/grafana_upstream.conf }
+    notify: restart nginx
+
+  when: env == "production"
